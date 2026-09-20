@@ -14,11 +14,12 @@ var (
 )
 
 type Claims struct {
-	UserID      string   `json:"user_id"`
-	TenantID    string   `json:"tenant_id"`
-	Role        string   `json:"role"`
-	Permissions []string `json:"permissions,omitempty"`
-	MarketIDs   []string `json:"market_ids,omitempty"`
+	UserID      string                 `json:"user_id"`
+	TenantID    string                 `json:"tenant_id"`
+	Role        string                 `json:"role"`
+	Permissions []string               `json:"permissions,omitempty"`
+	Scopes      []string               `json:"scopes,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -29,7 +30,11 @@ type TokenPair struct {
 	TokenType    string `json:"token_type"`
 }
 
-func GenerateTokenPair(secret string, userID, tenantID, role string, permissions, marketIDs []string, accessTTL, refreshTTL time.Duration) (*TokenPair, error) {
+func GenerateTokenPair(secret string, userID, tenantID, role string, permissions, scopes []string, accessTTL, refreshTTL time.Duration) (*TokenPair, error) {
+	return GenerateTokenPairWithMetadata(secret, userID, tenantID, role, permissions, scopes, nil, accessTTL, refreshTTL)
+}
+
+func GenerateTokenPairWithMetadata(secret string, userID, tenantID, role string, permissions, scopes []string, metadata map[string]interface{}, accessTTL, refreshTTL time.Duration) (*TokenPair, error) {
 	if secret == "" {
 		return nil, ErrEmptySecret
 	}
@@ -47,7 +52,8 @@ func GenerateTokenPair(secret string, userID, tenantID, role string, permissions
 		TenantID:    tenantID,
 		Role:        role,
 		Permissions: permissions,
-		MarketIDs:   marketIDs,
+		Scopes:      scopes,
+		Metadata:    metadata,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),

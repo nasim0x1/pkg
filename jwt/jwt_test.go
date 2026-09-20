@@ -11,9 +11,10 @@ func TestJWTTokenGenerationAndValidation(t *testing.T) {
 	tenantID := "tenant-456"
 	role := "sr"
 	perms := []string{"order:create", "order:read"}
-	markets := []string{"banani", "polashi"}
+	scopes := []string{"banani", "polashi"}
+	metadata := map[string]interface{}{"device_id": "dev-001"}
 
-	tokenPair, err := GenerateTokenPair(secret, userID, tenantID, role, perms, markets, 15*time.Minute, 7*24*time.Hour)
+	tokenPair, err := GenerateTokenPairWithMetadata(secret, userID, tenantID, role, perms, scopes, metadata, 15*time.Minute, 7*24*time.Hour)
 	if err != nil {
 		t.Fatalf("Failed to generate token pair: %v", err)
 	}
@@ -29,5 +30,11 @@ func TestJWTTokenGenerationAndValidation(t *testing.T) {
 
 	if claims.UserID != userID || claims.TenantID != tenantID || claims.Role != role {
 		t.Errorf("Claims mismatch: got %+v", claims)
+	}
+	if len(claims.Scopes) != 2 || claims.Scopes[0] != "banani" {
+		t.Errorf("Scopes mismatch: got %+v", claims.Scopes)
+	}
+	if claims.Metadata["device_id"] != "dev-001" {
+		t.Errorf("Metadata mismatch: got %+v", claims.Metadata)
 	}
 }
