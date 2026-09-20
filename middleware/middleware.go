@@ -80,10 +80,21 @@ func CORS(next http.Handler) http.Handler {
 	})
 }
 
-func TenantResolver(defaultTenant string) func(http.Handler) http.Handler {
-	if defaultTenant == "" {
-		defaultTenant = "default"
+// CleanTenantID normalizes a tenant ID string, falling back to defaultTenant if empty, "null", or "undefined".
+func CleanTenantID(tenantID, defaultTenant string) string {
+	t := strings.TrimSpace(tenantID)
+	if t == "" || strings.EqualFold(t, "null") || strings.EqualFold(t, "undefined") {
+		d := strings.TrimSpace(defaultTenant)
+		if d == "" || strings.EqualFold(d, "null") || strings.EqualFold(d, "undefined") {
+			return "default"
+		}
+		return d
 	}
+	return t
+}
+
+func TenantResolver(defaultTenant string) func(http.Handler) http.Handler {
+	defaultTenant = CleanTenantID(defaultTenant, "default")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tenantID := r.Header.Get("X-Tenant-ID")
@@ -93,9 +104,8 @@ func TenantResolver(defaultTenant string) func(http.Handler) http.Handler {
 			if tenantID == "" {
 				tenantID = r.Header.Get("Tenant-ID")
 			}
-			if tenantID == "" {
-				tenantID = defaultTenant
-			}
+			tenantID = CleanTenantID(tenantID, defaultTenant)
+
 			ctx := context.WithValue(r.Context(), TenantIDKey, tenantID)
 			w.Header().Set("X-Tenant-ID", tenantID)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -124,9 +134,7 @@ func AuthGuard(jwtSecret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			if claims.TenantID == "" {
-				claims.TenantID = "default"
-			}
+			claims.TenantID = CleanTenantID(claims.TenantID, "default")
 
 			ctx := context.WithValue(r.Context(), ClaimsKey, claims)
 			ctx = context.WithValue(ctx, TenantIDKey, claims.TenantID)
@@ -146,7 +154,7 @@ func RequirePermission(engine *rbac.Engine, permission string) func(http.Handler
 			}
 
 			if !engine.HasPermission(claims.Role, permission) {
-				response.Forbidden(w, "insufficient permissions for resource")
+				response.Forbidden(w, "permission denied: required permission "+permission)
 				return
 			}
 
@@ -164,6 +172,17 @@ func HeaderIdentityResolver(next http.Handler) http.Handler {
 		if role := r.Header.Get("X-User-Role"); role != "" {
 			ctx = context.WithValue(ctx, UserRoleKey, role)
 		}
+		tenantID := r.Header.Get("X-Tenant-ID")
+		if tenantID == "" {
+			tenantID = r.Header.Get("X-Tenant-Id")
+		}
+		if tenantID == "" {
+			tenantID = r.Header.Get("Tenant-ID")
+		}
+		tenantID = CleanTenantID(tenantID, "default")
+		ctx = context.WithValue(ctx, TenantIDKey, tenantID)
+		w.Header().Set("X-Tenant-ID", tenantID)
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -176,11 +195,15 @@ func GetClaims(ctx context.Context) *jwt.Claims {
 }
 
 func GetTenantID(ctx context.Context) string {
-	if tenantID, ok := ctx.Value(TenantIDKey).(string); ok && tenantID != "" {
-		return tenantID
+	if tenantID, ok := ctx.Value(TenantIDKey).(string); ok {
+		if cleaned := CleanTenantID(tenantID, ""); cleaned != "" {
+			return cleaned
+		}
 	}
-	if claims := GetClaims(ctx); claims != nil && claims.TenantID != "" {
-		return claims.TenantID
+	if claims := GetClaims(ctx); claims != nil {
+		if cleaned := CleanTenantID(claims.TenantID, ""); cleaned != "" {
+			return cleaned
+		}
 	}
 	return "default"
 }

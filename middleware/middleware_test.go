@@ -74,3 +74,50 @@ roles:
 		t.Errorf("expected next handler to be called")
 	}
 }
+
+func TestCleanTenantIDAndNullFallback(t *testing.T) {
+	cases := []struct {
+		input       string
+		defaultVal  string
+		expected    string
+	}{
+		{"", "default", "default"},
+		{"null", "default", "default"},
+		{"NULL", "default", "default"},
+		{"undefined", "default", "default"},
+		{"UNDEFINED", "default", "default"},
+		{"   ", "", "default"},
+		{"tenant-alpha", "default", "tenant-alpha"},
+		{"custom", "", "custom"},
+	}
+
+	for _, c := range cases {
+		got := CleanTenantID(c.input, c.defaultVal)
+		if got != c.expected {
+			t.Errorf("CleanTenantID(%q, %q) = %q; want %q", c.input, c.defaultVal, got, c.expected)
+		}
+	}
+
+	// Test with TenantResolver middleware
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /tenant-check", func(w http.ResponseWriter, r *http.Request) {
+		tenant := GetTenantID(r.Context())
+		w.Header().Set("X-Resolved-Tenant", tenant)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := TenantResolver("default")(mux)
+
+	for _, val := range []string{"null", "undefined", "", "  "} {
+		req := httptest.NewRequest("GET", "/tenant-check", nil)
+		if val != "" {
+			req.Header.Set("X-Tenant-ID", val)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Header().Get("X-Resolved-Tenant") != "default" {
+			t.Errorf("for input header %q, expected resolved tenant 'default', got %q", val, rec.Header().Get("X-Resolved-Tenant"))
+		}
+	}
+}
